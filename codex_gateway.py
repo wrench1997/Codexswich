@@ -1,36 +1,4 @@
 # codex_qwen_gateway.py
-#
-# 纯中转协议层：
-#
-# Codex CLI / OpenAI SDK
-#            ⇅
-# OpenAI Responses API
-# OpenAI Chat Completions
-#            ⇅
-# Qwen3.5 XML Tool Calling
-#            ⇅
-# vLLM
-#
-# 特点：
-# - 不执行工具
-# - 只做协议转换
-# - 完整兼容 Codex CLI
-# - 支持 Responses API
-# - 支持 streaming
-# - 支持 OpenAI tool_calls
-# - 支持 Qwen XML tool_call
-# - 自动过滤 
-#
-# 安装:
-# pip install fastapi uvicorn httpx
-#
-# 启动:
-# uvicorn codex_gateway:app --host 0.0.0.0 --port 8080
-#
-# 使用:
-# export OPENAI_BASE_URL=http://127.0.0.1:8080/v1
-# export OPENAI_API_KEY=dummy
-
 import json
 import re
 import time
@@ -53,7 +21,7 @@ app = FastAPI()
 # REGEX
 # =========================================================
 
-THINK_RE = re.compile(r".*?", re.S)
+THINK_RE = re.compile(r"<think>.*?</think>", re.S)
 TOOL_CALL_RE = re.compile(
     r"<tool_call>\s*<function=(?P<name>[^>]+)>\s*(?P<body>.*?)</function>\s*</tool_call>",
     re.S,
@@ -74,17 +42,16 @@ def strip_think(text: str) -> str:
 
 def get_emit_text(text: str) -> str:
     """
-    流式安全文本提取器：完美屏蔽  和 <tool_call> 标签及其残缺部分。
-    保证半截标签（如 "<to"）绝不泄露到前端。
+    流式安全文本提取器：完美屏蔽 <think> 和 <tool_call> 标签及其残缺部分。
     """
     text = THINK_RE.sub("", text)
     
-    # 屏蔽未闭合的 
-    think_idx = text.rfind("")
-    if think_idx != -1 and "" not in text[think_idx:]:
+    # 屏蔽未闭合的 <think>
+    think_idx = text.rfind("<think>")
+    if think_idx != -1 and "</think>" not in text[think_idx:]:
         text = text[:think_idx]
         
-    # 屏蔽开始的 <tool_call>
+    # 屏蔽开始的 <tool_call> 及后续全部内容
     tool_idx = text.find("<tool_call")
     if tool_idx != -1:
         text = text[:tool_idx]
@@ -140,7 +107,7 @@ def build_xml_tool_call(name: str, arguments: dict[str, Any]):
     return "\n".join(out)
 
 # =========================================================
-# TOOL PROMPT (与 Jinja 完美同步的强指令)
+# TOOL PROMPT
 # =========================================================
 
 def build_tool_system_prompt(tools):
@@ -208,7 +175,7 @@ def convert_openai_messages(messages, tools=None):
             content = msg.get("content", "")
             out.append({
                 "role": "user",
-                "content": f"<tool_response>\n{content}\n</tool_call>"
+                "content": f"<tool_response>\n{content}\n</tool_response>"
             })
             continue
 
@@ -314,136 +281,130 @@ async def responses(req: Request):
         "messages": messages,
         "stream": stream,
         "temperature": body.get("temperature", 0.2),
-        # 故意不传 "tools" 给 vLLM, 避免 vLLM 的 Pydantic 模型因为 namespace 格式报错。
-        # 我们已经通过 convert_responses_input 手动将 tool definition 塞入了 system prompt。
     }
 
-    if not stream:
-        async with httpx.AsyncClient(timeout=1800) as client:
-            r = await client.post(f"{VLLM_BASE_URL}/chat/completions", json=payload)
-        data = r.json()
-        text = data["choices"][0]["message"].get("content", "")
-        tc = parse_xml_tool_call(text)
-        
-        if tc:
-            out_item = {
-                "id": f"fc_{uuid.uuid4().hex[:8]}",
-                "type": "function_call",
-                "status": "completed",
-                "call_id": tc["id"],
-                "name": tc["function"]["name"],
-                "arguments": tc["function"]["arguments"],
-            }
-        else:
-            out_item = {
-                "id": f"msg_{uuid.uuid4().hex[:8]}",
-                "type": "message",
-                "role": "assistant",
-                "status": "completed",
-                "content": [{"type": "output_text", "text": strip_think(text)}],
-            }
+    # =====================================
+    # STREAM
+    # =====================================
+    if stream:
+        async def stream_events():
+            item_id = f"msg_{uuid.uuid4().hex[:8]}"
             
-        response = {
-            "id": response_id, "object": "response", "created_at": int(time.time()),
-            "status": "completed", "model": model, "output": [out_item]
-        }
-        RESPONSES[response_id] = response
-        return response
+            # 帮助函数，强行使用 ensure_ascii=False 防止乱码
+            def make_event(event_type, event_payload):
+                payload_dict = {"type": event_type, **event_payload}
+                return f"data: {json.dumps(payload_dict, ensure_ascii=False)}\n\n"
 
-    # STREAM 处理
-    async def stream_events():
-        item_id = f"msg_{uuid.uuid4().hex[:8]}"
-        yield f"data: {json.dumps({'type': 'response.created', 'response': {'id': response_id, 'object': 'response', 'created_at': int(time.time()), 'status': 'in_progress', 'model': model, 'output': []}})}\n\n"
-        yield f"data: {json.dumps({'type': 'response.in_progress', 'response': {'id': response_id, 'object': 'response', 'status': 'in_progress', 'model': model}})}\n\n"
+            yield make_event("response.created", {"response": {"id": response_id, "object": "response", "created_at": int(time.time()), "status": "in_progress", "model": model, "output": []}})
+            yield make_event("response.in_progress", {"response": {"id": response_id, "object": "response", "status": "in_progress", "model": model}})
 
-        accumulated = ""
-        emitted_length = 0
-        full_text = ""
-        message_item_created = False
-        content_part_created = False
+            accumulated = ""
+            emitted_length = 0
+            full_text = ""
+            message_item_created = False
+            content_part_created = False
 
-        async for chunk in vllm_stream(payload):
-            # 1. 遇到 [DONE] 时，统一执行正则匹配提取 Tool Call
-            if chunk == "[DONE]":
-                tc = parse_xml_tool_call(accumulated)
-                
-                # 如果检测到工具调用
-                if tc:
-                    tool_item_id = f"fc_{uuid.uuid4().hex[:8]}"
-                    tool_args = tc["function"]["arguments"]
-                    tool_name = tc["function"]["name"]
+            async for chunk in vllm_stream(payload):
+                # ------------------------------------
+                # 遇到 [DONE] 时统一结算：支持 纯文本 / 纯工具 / 文本+工具混合
+                # ------------------------------------
+                if chunk == "[DONE]":
+                    tc = parse_xml_tool_call(accumulated)
                     
-                    yield f"data: {json.dumps({'type': 'response.output_item.added', 'output_index': 0, 'item': {'id': tool_item_id, 'type': 'function_call', 'status': 'in_progress', 'call_id': tc['id'], 'name': tool_name, 'arguments': ''}})}\n\n"
-                    yield f"data: {json.dumps({'type': 'response.function_call_arguments.delta', 'item_id': tool_item_id, 'output_index': 0, 'delta': tool_args})}\n\n"
-                    yield f"data: {json.dumps({'type': 'response.function_call_arguments.done', 'item_id': tool_item_id, 'output_index': 0, 'arguments': tool_args})}\n\n"
+                    output_items = []
+                    output_index = 0
                     
-                    item = {"id": tool_item_id, "type": "function_call", "status": "completed", "call_id": tc['id'], "name": tool_name, "arguments": tool_args}
-                    yield f"data: {json.dumps({'type': 'response.output_item.done', 'output_index': 0, 'item': item})}\n\n"
-                    
-                    final_resp = {"id": response_id, "object": "response", "created_at": int(time.time()), "status": "completed", "model": model, "output": [item]}
-                    RESPONSES[response_id] = final_resp
-                    yield f"data: {json.dumps({'type': 'response.completed', 'response': final_resp})}\n\n"
-                    yield "data: [DONE]\n\n"
-                    return
-
-                # 如果没有工具调用，结束纯文本流
-                else:
-                    if content_part_created:
-                        yield f"data: {json.dumps({'type': 'response.output_text.done', 'item_id': item_id, 'output_index': 0, 'content_index': 0, 'text': full_text})}\n\n"
-                        yield f"data: {json.dumps({'type': 'response.content_part.done', 'item_id': item_id, 'output_index': 0, 'content_index': 0, 'part': {'type': 'output_text', 'text': full_text}})}\n\n"
-                    
-                    item = {"id": item_id, "type": "message", "role": "assistant", "status": "completed", "content": [{"type": "output_text", "text": full_text}]}
+                    # 1. 结算阶段：如果有被打开的普通文本对话，安全关闭并提交
                     if message_item_created:
-                        yield f"data: {json.dumps({'type': 'response.output_item.done', 'output_index': 0, 'item': item})}\n\n"
+                        if content_part_created:
+                            yield make_event("response.output_text.done", {"item_id": item_id, "output_index": output_index, "content_index": 0, "text": full_text})
+                            yield make_event("response.content_part.done", {"item_id": item_id, "output_index": output_index, "content_index": 0, "part": {"type": "output_text", "text": full_text}})
                         
-                    final_resp = {"id": response_id, "object": "response", "created_at": int(time.time()), "status": "completed", "model": model, "output": [item] if full_text else []}
+                        text_item = {"id": item_id, "type": "message", "role": "assistant", "status": "completed", "content": [{"type": "output_text", "text": full_text}]}
+                        yield make_event("response.output_item.done", {"output_index": output_index, "item": text_item})
+                        
+                        output_items.append(text_item)
+                        output_index += 1  # 关键修复：工具推移到下一个 Index，避免状态冲突
+
+                    # 2. 结算阶段：如果解析出了工具调用，发送工具请求事件
+                    if tc:
+                        tool_item_id = f"fc_{uuid.uuid4().hex[:8]}"
+                        tool_args = tc["function"]["arguments"]
+                        tool_name = tc["function"]["name"]
+                        
+                        yield make_event("response.output_item.added", {"output_index": output_index, "item": {"id": tool_item_id, "type": "function_call", "status": "in_progress", "call_id": tc['id'], "name": tool_name, "arguments": ""}})
+                        yield make_event("response.function_call_arguments.delta", {"item_id": tool_item_id, "output_index": output_index, "delta": tool_args})
+                        yield make_event("response.function_call_arguments.done", {"item_id": tool_item_id, "output_index": output_index, "arguments": tool_args})
+                        
+                        func_item = {"id": tool_item_id, "type": "function_call", "status": "completed", "call_id": tc['id'], "name": tool_name, "arguments": tool_args}
+                        yield make_event("response.output_item.done", {"output_index": output_index, "item": func_item})
+                        
+                        output_items.append(func_item)
+
+                    # 3. 结算阶段：如果异常情况下没有任何输出，兜底发一个空回复以防止CLI报错
+                    if not output_items:
+                        text_item = {"id": item_id, "type": "message", "role": "assistant", "status": "completed", "content": [{"type": "output_text", "text": ""}]}
+                        yield make_event("response.output_item.added", {"output_index": output_index, "item": {"id": item_id, "type": "message", "role": "assistant", "status": "in_progress", "content": []}})
+                        yield make_event("response.output_item.done", {"output_index": output_index, "item": text_item})
+                        output_items.append(text_item)
+
+                    final_resp = {"id": response_id, "object": "response", "created_at": int(time.time()), "status": "completed", "model": model, "output": output_items}
                     RESPONSES[response_id] = final_resp
-                    yield f"data: {json.dumps({'type': 'response.completed', 'response': final_resp})}\n\n"
+                    yield make_event("response.completed", {"response": final_resp})
                     yield "data: [DONE]\n\n"
                     return
 
-            # 2. 正常文本流处理 (仅拦截和缓存安全文本)
-            if "__error__" in chunk:
-                yield f"data: {json.dumps({'type': 'response.failed', 'error': chunk.get('__error__')})}\n\n"
-                yield "data: [DONE]\n\n"
-                return
+                # ------------------------------------
+                # 正常文本流处理（过滤XML及思考过程）
+                # ------------------------------------
+                if "__error__" in chunk:
+                    yield make_event("response.failed", {"error": chunk.get('__error__')})
+                    yield "data: [DONE]\n\n"
+                    return
 
-            delta = chunk.get("choices", [{}])[0].get("delta", {}).get("content", "")
-            if delta:
-                accumulated += delta
+                delta = chunk.get("choices", [{}])[0].get("delta", {}).get("content", "")
+                if delta:
+                    accumulated += delta
+                    
+                emit_text = get_emit_text(accumulated)
+                new_text = emit_text[emitted_length:]
                 
-            # 通过安全提取器过滤
-            emit_text = get_emit_text(accumulated)
-            new_text = emit_text[emitted_length:]
-            
-            if new_text:
-                if not message_item_created:
-                    message_item_created = True
-                    content_part_created = True
-                    yield f"data: {json.dumps({'type': 'response.output_item.added', 'output_index': 0, 'item': {'id': item_id, 'type': 'message', 'role': 'assistant', 'status': 'in_progress', 'content': []}})}\n\n"
-                    yield f"data: {json.dumps({'type': 'response.content_part.added', 'item_id': item_id, 'output_index': 0, 'content_index': 0, 'part': {'type': 'output_text', 'text': ''}})}\n\n"
-                
-                yield f"data: {json.dumps({'type': 'response.output_text.delta', 'item_id': item_id, 'output_index': 0, 'content_index': 0, 'delta': new_text})}\n\n"
-                emitted_length = len(emit_text)
-                full_text += new_text
+                if new_text:
+                    if not message_item_created:
+                        message_item_created = True
+                        content_part_created = True
+                        yield make_event("response.output_item.added", {"output_index": 0, "item": {"id": item_id, "type": "message", "role": "assistant", "status": "in_progress", "content": []}})
+                        yield make_event("response.content_part.added", {"item_id": item_id, "output_index": 0, "content_index": 0, "part": {"type": "output_text", "text": ""}})
+                    
+                    yield make_event("response.output_text.delta", {"item_id": item_id, "output_index": 0, "content_index": 0, "delta": new_text})
+                    emitted_length = len(emit_text)
+                    full_text += new_text
 
-    return StreamingResponse(stream_events(), media_type="text/event-stream")
+        return StreamingResponse(stream_events(), media_type="text/event-stream")
+
+    # =====================================
+    # NON-STREAMING (兜底)
+    # =====================================
+    async with httpx.AsyncClient(timeout=1800) as client:
+        r = await client.post(f"{VLLM_BASE_URL}/chat/completions", json=payload)
+    data = r.json()
+    text = data["choices"][0]["message"].get("content", "")
+    tc = parse_xml_tool_call(text)
+    
+    if tc:
+        out_item = {"id": f"fc_{uuid.uuid4().hex[:8]}", "type": "function_call", "status": "completed", "call_id": tc["id"], "name": tc["function"]["name"], "arguments": tc["function"]["arguments"]}
+    else:
+        out_item = {"id": f"msg_{uuid.uuid4().hex[:8]}", "type": "message", "role": "assistant", "status": "completed", "content": [{"type": "output_text", "text": strip_think(text)}]}
+        
+    response = {"id": response_id, "object": "response", "created_at": int(time.time()), "status": "completed", "model": model, "output": [out_item]}
+    RESPONSES[response_id] = response
+    return JSONResponse(response)
 
 @app.get("/v1/responses/{response_id}")
 async def get_response(response_id: str):
     if response_id in RESPONSES: return RESPONSES[response_id]
     return {"id": response_id, "object": "response", "status": "completed", "output": []}
 
-# =========================================================
-# CHAT COMPLETIONS (如果需要调用 Chat API)
-# =========================================================
 @app.post("/v1/chat/completions")
 async def chat_completions(req: Request):
-    body = await req.json()
-    payload = dict(body)
-    payload["messages"] = convert_openai_messages(body.get("messages", []), body.get("tools"))
-    if "tools" in payload: del payload["tools"]  # 手工已合并到 Prompt，移除以免 vLLM 报错
-    
-    # 因为主要由 Codex CLI 使用 /v1/responses，所以此处保留你原有的逻辑
-    # 若需在此支持完美拦截，同理引入 get_emit_text() 即可，为节省篇幅略过。
     return JSONResponse({"error": "Please use /v1/responses API for streaming Agent."})
