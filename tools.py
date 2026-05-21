@@ -514,6 +514,340 @@ def cmd(command: str):
 
 
 # =========================================================
+# TOOL: replace_in_file (enhanced version)
+# =========================================================
+
+@tool
+def replace_in_file(
+    path: str,
+    old_code: str = "",
+    new_code: str = "",
+    use_regex: bool = False,
+    replace_all: bool = False,
+    start_line: int = None,
+    end_line: int = None,
+    create_backup: bool = True,
+):
+    """
+    Enhanced code replacement tool with multiple strategies.
+    
+    Supports:
+    - Exact string matching (default)
+    - Regular expression matching
+    - Line range replacement
+    - Single or multiple replacements
+    - Automatic backup before modification
+    
+    Args:
+        path (str): The file path to modify. Can be relative or absolute.
+        old_code (str): The code string or regex pattern to search for.
+        new_code (str): The new code string to replace with.
+        use_regex (bool): If True, treat old_code as a regex pattern.
+        replace_all (bool): If True, replace all occurrences. If False, only first.
+        start_line (int): Optional start line number (1-indexed) for range replacement.
+        end_line (int): Optional end line number (1-indexed) for range replacement.
+        create_backup (bool): If True, create a .bak backup file before modifying.
+        
+    Returns:
+        dict: A dictionary containing one of the following:
+            - On success:
+                {
+                    "success": True,
+                    "path": str,
+                    "replaced": True,
+                    "replacements_made": int,   # Number of replacements
+                    "backup_path": str,         # Path to backup file (if created)
+                    "method": str               # "regex", "line_range", or "string"
+                }
+            - On not found:
+                {
+                    "success": False,
+                    "error": "Pattern not found in file"
+                }
+            - On error:
+                {
+                    "error": str
+                }
+                
+    Example:
+        >>> # Simple string replacement
+        >>> replace_in_file("test.py", "old_func", "new_func")
+        
+        >>> # Regex replacement
+        >>> replace_in_file("test.py", r"def\\s+\\w+", "def new_name", use_regex=True)
+        
+        >>> # Replace all occurrences
+        >>> replace_in_file("test.py", "foo", "bar", replace_all=True)
+        
+        >>> # Line range replacement
+        >>> replace_in_file("test.py", start_line=10, end_line=20, new_code="new code")
+    """
+    
+    try:
+        p = Path(path)
+        p = p.resolve()
+        
+        if not p.exists():
+            return {"error": "file not exists"}
+        
+        if not p.is_file():
+            return {"error": "path is not a file"}
+        
+        content = p.read_text(encoding="utf-8", errors="ignore")
+        original_content = content
+        replacements_made = 0
+        method = "string"
+        
+        # Create backup if requested
+        backup_path = None
+        if create_backup:
+            backup_file = p.with_suffix(p.suffix + ".bak")
+            backup_file.write_text(content, encoding="utf-8")
+            backup_path = str(backup_file)
+        
+        # Strategy 1: Line range replacement
+        if start_line is not None or end_line is not None:
+            method = "line_range"
+            lines = content.splitlines(keepends=True)
+            
+            # Convert to 0-indexed
+            start_idx = (start_line - 1) if start_line is not None else 0
+            end_idx = end_line if end_line is not None else len(lines)
+            
+            # Ensure valid range
+            start_idx = max(0, min(start_idx, len(lines)))
+            end_idx = max(start_idx, min(end_idx, len(lines)))
+            
+            # Replace the range
+            lines[start_idx:end_idx] = [new_code] if new_code else []
+            new_content = "".join(lines)
+            replacements_made = end_idx - start_idx
+            
+        # Strategy 2: Regex replacement
+        elif use_regex:
+            method = "regex"
+            import re
+            
+            if replace_all:
+                new_content, count = re.subn(old_code, new_code, content)
+                replacements_made = count
+            else:
+                new_content, count = re.subn(old_code, new_code, content, count=1)
+                replacements_made = count
+                
+            if replacements_made == 0:
+                if create_backup and backup_path:
+                    try:
+                        Path(backup_path).unlink()
+                    except:
+                        pass
+                return {"success": False, "error": "Pattern not found in file"}
+                
+        # Strategy 3: Simple string replacement
+        else:
+            method = "string"
+            if old_code not in content:
+                if create_backup and backup_path:
+                    try:
+                        Path(backup_path).unlink()
+                    except:
+                        pass
+                return {"success": False, "error": "old_code not found in file"}
+            
+            if replace_all:
+                new_content = content.replace(old_code, new_code)
+                replacements_made = content.count(old_code)
+            else:
+                new_content = content.replace(old_code, new_code, 1)
+                replacements_made = 1
+        
+        # Write the new content
+        p.write_text(new_content, encoding="utf-8")
+        
+        return {
+            "success": True,
+            "path": str(p),
+            "replaced": True,
+            "replacements_made": replacements_made,
+            "backup_path": backup_path,
+            "method": method,
+        }
+        
+    except Exception as e:
+        return {"error": str(e)}
+
+
+# =========================================================
+# TOOL: search_replace_preview
+# =========================================================
+
+@tool
+def search_replace_preview(
+    path: str,
+    old_code: str = "",
+    new_code: str = "",
+    use_regex: bool = False,
+    replace_all: bool = False,
+    context_lines: int = 3,
+):
+    """
+    Preview changes before applying them. Shows a diff-like output.
+    
+    Args:
+        path (str): The file path to examine.
+        old_code (str): The code string or regex pattern to search for.
+        new_code (str): The new code string to replace with.
+        use_regex (bool): If True, treat old_code as a regex pattern.
+        replace_all (bool): If True, show all matches. If False, show first only.
+        context_lines (int): Number of context lines to show around each match.
+        
+    Returns:
+        dict: A dictionary containing:
+            - "matches": List of match objects with context
+            - "total_matches": Total number of matches found
+            - "preview": Human-readable preview of changes
+    """
+    
+    try:
+        import re
+        
+        p = Path(path)
+        p = p.resolve()
+        
+        if not p.exists():
+            return {"error": "file not exists"}
+        
+        if not p.is_file():
+            return {"error": "path is not a file"}
+        
+        content = p.read_text(encoding="utf-8", errors="ignore")
+        lines = content.splitlines()
+        
+        matches = []
+        
+        if use_regex:
+            # Find all regex matches with positions
+            if replace_all:
+                for match in re.finditer(old_code, content):
+                    matches.append({
+                        "start": match.start(),
+                        "end": match.end(),
+                        "matched_text": match.group(),
+                    })
+            else:
+                match = re.search(old_code, content)
+                if match:
+                    matches.append({
+                        "start": match.start(),
+                        "end": match.end(),
+                        "matched_text": match.group(),
+                    })
+        else:
+            # Find all string matches
+            start = 0
+            while True:
+                pos = content.find(old_code, start)
+                if pos == -1:
+                    break
+                matches.append({
+                    "start": pos,
+                    "end": pos + len(old_code),
+                    "matched_text": old_code,
+                })
+                if not replace_all:
+                    break
+                start = pos + 1
+        
+        if not matches:
+            return {
+                "matches": [],
+                "total_matches": 0,
+                "preview": "No matches found.",
+            }
+        
+        # Build preview with context
+        preview_lines = []
+        preview_lines.append(f"Found {len(matches)} match(es) in {path}:")
+        preview_lines.append("=" * 60)
+        
+        for i, match in enumerate(matches):
+            # Find line numbers
+            start_line = content[:match["start"]].count("\n")
+            end_line = content[:match["end"]].count("\n")
+            
+            preview_lines.append(f"\n[Match {i+1}] Lines {start_line + 1}-{end_line + 1}:")
+            preview_lines.append("-" * 40)
+            
+            # Show context
+            ctx_start = max(0, start_line - context_lines)
+            ctx_end = min(len(lines), end_line + context_lines + 1)
+            
+            for line_num in range(ctx_start, ctx_end):
+                prefix = "  "
+                if start_line <= line_num <= end_line:
+                    if line_num == start_line:
+                        prefix = "- "  # Old code
+                    else:
+                        prefix = "  "
+                preview_lines.append(f"{prefix}{line_num + 1}: {lines[line_num]}")
+            
+            preview_lines.append("  ... becomes:")
+            preview_lines.append(f"+ {new_code}")
+        
+        return {
+            "matches": matches,
+            "total_matches": len(matches),
+            "preview": "\n".join(preview_lines),
+        }
+        
+    except Exception as e:
+        return {"error": str(e)}
+
+
+# =========================================================
+# TOOL: revert_file_backup
+# =========================================================
+
+@tool
+def revert_file_backup(path: str):
+    """
+    Revert a file to its backup version (.bak).
+    
+    Args:
+        path (str): The file path to revert.
+        
+    Returns:
+        dict: Result of the revert operation.
+    """
+    
+    try:
+        p = Path(path)
+        p = p.resolve()
+        backup_p = p.with_suffix(p.suffix + ".bak")
+        
+        if not backup_p.exists():
+            return {"error": "No backup file found"}
+        
+        if not p.exists():
+            # Restore from backup
+            content = backup_p.read_text(encoding="utf-8")
+            p.write_text(content, encoding="utf-8")
+        else:
+            # Overwrite current with backup
+            content = backup_p.read_text(encoding="utf-8")
+            p.write_text(content, encoding="utf-8")
+        
+        return {
+            "success": True,
+            "message": f"Reverted {path} from backup",
+            "backup_path": str(backup_p),
+        }
+        
+    except Exception as e:
+        return {"error": str(e)}
+
+
+# =========================================================
 # TOOL: write_file
 # =========================================================
 
@@ -656,6 +990,105 @@ OPENAI_TOOLS = [
                     }
                 },
                 "required": ["path", "content"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "replace_in_file",
+            "description": "Enhanced code replacement with regex, line range, and backup support",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Relative path to the file within workspace"
+                    },
+                    "old_code": {
+                        "type": "string",
+                        "description": "The code string or regex pattern to search for"
+                    },
+                    "new_code": {
+                        "type": "string",
+                        "description": "The new code string to replace with"
+                    },
+                    "use_regex": {
+                        "type": "boolean",
+                        "description": "If True, treat old_code as a regex pattern (default: False)"
+                    },
+                    "replace_all": {
+                        "type": "boolean",
+                        "description": "If True, replace all occurrences (default: False)"
+                    },
+                    "start_line": {
+                        "type": "integer",
+                        "description": "Optional start line number (1-indexed) for line range replacement"
+                    },
+                    "end_line": {
+                        "type": "integer",
+                        "description": "Optional end line number (1-indexed) for line range replacement"
+                    },
+                    "create_backup": {
+                        "type": "boolean",
+                        "description": "If True, create a .bak backup file before modifying (default: True)"
+                    }
+                },
+                "required": ["path"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_replace_preview",
+            "description": "Preview code changes before applying them. Shows matches with context.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Relative path to the file within workspace"
+                    },
+                    "old_code": {
+                        "type": "string",
+                        "description": "The code string or regex pattern to search for"
+                    },
+                    "new_code": {
+                        "type": "string",
+                        "description": "The new code string to replace with"
+                    },
+                    "use_regex": {
+                        "type": "boolean",
+                        "description": "If True, treat old_code as a regex pattern (default: False)"
+                    },
+                    "replace_all": {
+                        "type": "boolean",
+                        "description": "If True, show all matches (default: False)"
+                    },
+                    "context_lines": {
+                        "type": "integer",
+                        "description": "Number of context lines to show around each match (default: 3)"
+                    }
+                },
+                "required": ["path"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "revert_file_backup",
+            "description": "Revert a file to its backup version (.bak file)",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Relative path to the file within workspace"
+                    }
+                },
+                "required": ["path"]
             }
         }
     },

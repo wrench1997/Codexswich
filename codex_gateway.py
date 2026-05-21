@@ -281,6 +281,9 @@ async def responses(req: Request):
         "messages": messages,
         "stream": stream,
         "temperature": body.get("temperature", 0.2),
+        "extra_body": {
+            "enable_thinking": True,
+        },
     }
 
     # =====================================
