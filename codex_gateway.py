@@ -143,12 +143,13 @@ def build_tool_system_prompt(tools):
         "</function>",
         "</tool_call>",
         "",
-        "Rules:",
-        "- If a suitable tool exists for the user request, use it instead of answering from memory.",
-        "- Put any reasoning or natural language BEFORE the first <tool_call>, never after the last </tool_call>.",
-        "- Include every required parameter.",
-        "- For object or array parameter values, write valid JSON inside the parameter body.",
-        "- If no tool is needed, answer normally."
+        "CRITICAL RULES FOR ASSISTANT:",
+        "1. YOU ARE CONNECTED TO A REAL SYSTEM VIA TOOLS. YOU MUST USE THEM!",
+        "2. DO NOT HALLUCINATE OR GUESS file contents or command outputs. Always call 'read_file_content' or 'execute_shell_command' first.",
+        "3. You must copy the exact tool name from the JSON above. If the tool name has a prefix (e.g., 'codex-tools__execute_shell_command'), you MUST include the prefix in the <function=...> tag.",
+        "4. Put any reasoning or natural language BEFORE the first <tool_call>, never after the last </tool_call>.",
+        "5. For object or array parameter values, write valid JSON inside the parameter body.",
+        "6. ONLY answer from memory if the user is asking a general knowledge question unrelated to the workspace."
     ])
     return "\n".join(out)
 
