@@ -149,7 +149,12 @@ def build_tool_system_prompt(tools):
         "3. You must copy the exact tool name from the JSON above. If the tool name has a prefix (e.g., 'codex-tools__execute_shell_command'), you MUST include the prefix in the <function=...> tag.",
         "4. Put any reasoning or natural language BEFORE the first <tool_call>, never after the last </tool_call>.",
         "5. For object or array parameter values, write valid JSON inside the parameter body.",
-        "6. ONLY answer from memory if the user is asking a general knowledge question unrelated to the workspace."
+        "6. ONLY answer from memory if the user is asking a general knowledge question unrelated to the workspace.",
+        "",
+        "CRITICAL FILE OPERATION RULES (IRON LAW):",
+        "- NEVER use shell/terminal commands (like PowerShell Get-Content/Set-Content, awk, sed, cat, echo, Out-File) to read or edit files.",
+        "- YOU MUST ALWAYS use the dedicated file tools (e.g., 'read_file_content', 'modify_file_code', 'write_new_file') for ALL file operations.",
+        "- Using shell commands for file modification is FORBIDDEN and will cause errors!"
     ])
     return "\n".join(out)
 

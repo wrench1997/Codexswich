@@ -25,10 +25,12 @@ mcp = FastMCP("codex-tools")
 @mcp.tool()
 def execute_shell_command(command: str):
     """
-    【强制要求】执行系统 Shell 命令。
-    当你需要查看环境、运行编译、执行脚本、搜索文件 (grep/findstr) 时，必须调用此工具。
-    如果是 Windows 系统请使用 powershell 语法，Linux 请使用 bash 语法。
-    切勿自己猜测命令执行结果，必须通过此工具获取真实输出！
+    【注意】执行系统 Shell/终端 命令。
+    【严禁行为】：绝对不可以使用此工具来读取、写入或修改文件！
+    严禁在此工具中使用 Get-Content、Set-Content、cat、sed、echo >、Out-File、Add-Content 等命令！
+    
+    对于文件的读取、覆盖或修改，你必须去调用专门的文件处理工具（如 read_file_content、modify_file_code、write_new_file）。
+    此工具仅限用于：运行编译命令 (npm/cargo/zig build)、启动脚本、查询系统环境、搜索文件内容 (grep/findstr) 等。
     """
     return run_shell(command)
 
@@ -36,8 +38,12 @@ def execute_shell_command(command: str):
 @mcp.tool()
 def run_in_terminal(command: str):
     """
-    【强制要求】Codex 兼容的终端执行工具。
-    当需要执行任何命令行操作时，必须调用此工具获取真实输出，严禁猜测结果！
+    【注意】Codex 兼容的终端执行工具。
+    【严禁行为】：绝对不可以使用此工具来读取、写入或修改文件！
+    严禁使用 Get-Content、Set-Content、cat、sed、echo >、Out-File 等文件操作命令！
+    
+    此工具仅限用于：运行编译命令、启动脚本、查询系统环境等。
+    对于文件操作，必须使用专门的文件工具（如 read_file_content、modify_file_code、write_new_file）。
     """
     return run_in_terminal(command)
 
@@ -45,8 +51,12 @@ def run_in_terminal(command: str):
 @mcp.tool()
 def execute_bash(command: str):
     """
-    【强制要求】Codex/OpenHands 兼容的 bash 执行器。
-    当需要在类 Unix 环境中执行命令时必须使用此工具。
+    【注意】Codex/OpenHands 兼容的 bash 执行器。
+    【严禁行为】：绝对不可以使用此工具来读取、写入或修改文件！
+    严禁使用 cat、sed、awk、echo > 等文件操作命令！
+    
+    此工具仅限用于：运行编译命令、启动脚本、查询系统环境等。
+    对于文件操作，必须使用专门的文件工具（如 read_file_content、modify_file_code、write_new_file）。
     """
     return execute_bash(command)
 
@@ -54,8 +64,12 @@ def execute_bash(command: str):
 @mcp.tool()
 def shell(command: str):
     """
-    【强制要求】Shell 命令执行别名。
-    通用 shell 命令执行入口，必须调用此工具而非自己猜测输出。
+    【注意】Shell 命令执行别名。
+    【严禁行为】：绝对不可以使用此工具来读取、写入或修改文件！
+    严禁使用 Get-Content、Set-Content、cat、sed、echo >、Out-File 等文件操作命令！
+    
+    此工具仅限用于：运行编译命令、启动脚本、查询系统环境等。
+    对于文件操作，必须使用专门的文件工具（如 read_file_content、modify_file_code、write_new_file）。
     """
     return shell(command)
 
@@ -63,8 +77,12 @@ def shell(command: str):
 @mcp.tool()
 def bash(command: str):
     """
-    【强制要求】Bash 命令执行别名。
-    专门用于 bash 环境下的命令执行。
+    【注意】Bash 命令执行别名。
+    【严禁行为】：绝对不可以使用此工具来读取、写入或修改文件！
+    严禁使用 cat、sed、awk、echo > 等文件操作命令！
+    
+    此工具仅限用于：运行编译命令、启动脚本、查询系统环境等。
+    对于文件操作，必须使用专门的文件工具（如 read_file_content、modify_file_code、write_new_file）。
     """
     return bash(command)
 
@@ -72,8 +90,12 @@ def bash(command: str):
 @mcp.tool()
 def powershell(command: str):
     """
-    【强制要求】Windows PowerShell 命令执行器。
-    当在 Windows 系统上执行命令时，必须优先使用此工具。
+    【注意】Windows PowerShell 命令执行器。
+    【严禁行为】：绝对不可以使用此工具来读取、写入或修改文件！
+    严禁使用 Get-Content、Set-Content、Add-Content、Out-File、echo > 等文件操作命令！
+    
+    此工具仅限用于：运行编译命令、启动脚本、查询系统环境等。
+    对于文件操作，必须使用专门的文件工具（如 read_file_content、modify_file_code、write_new_file）。
     """
     return powershell(command)
 
@@ -81,8 +103,12 @@ def powershell(command: str):
 @mcp.tool()
 def cmd(command: str):
     """
-    【强制要求】Windows CMD 命令执行器。
-    当需要执行传统 CMD 命令时必须调用此工具。
+    【注意】Windows CMD 命令执行器。
+    【严禁行为】：绝对不可以使用此工具来读取、写入或修改文件！
+    严禁使用 type、copy con、echo > 等文件操作命令！
+    
+    此工具仅限用于：运行编译命令、启动脚本、查询系统环境等。
+    对于文件操作，必须使用专门的文件工具（如 read_file_content、modify_file_code、write_new_file）。
     """
     return cmd(command)
 
@@ -132,19 +158,20 @@ def modify_file_code(
     create_backup: bool = True,
 ):
     """
-    【强制要求】高级代码修改工具。用于在现有文件中替换特定代码块。
-    在使用此工具前，你必须先调用 read_file_content 确认 old_code 是文件中真实存在的字符串。
-    严禁凭空猜测文件内容进行修改！
+    【强制要求】这是修改代码和文本文件的唯一指定工具！
+    当需要修改现有文件中的代码时，必须调用此工具，绝对不要使用终端命令！
+    
+    相比终端命令，此工具绝对安全，且会自动创建备份文件，支持正则替换和范围修改。
     
     Args:
         path: 要修改的文件路径。
-        old_code: 要搜索的代码字符串或正则表达式。
+        old_code: 要搜索的代码字符串或正则表达式（必须先调用 read_file_content 确认内容存在）。
         new_code: 要替换成的新代码字符串。
         use_regex: 如果为 True，将 old_code 视为正则表达式。
         replace_all: 如果为 True，替换所有匹配项。
         start_line: 可选的起始行号 (1-indexed)，用于范围替换。
         end_line: 可选的结束行号 (1-indexed)，用于范围替换。
-        create_backup: 如果为 True，在修改前创建.bak 备份文件。
+        create_backup: 如果为 True，在修改前创建.bak 备份文件（默认开启）。
     """
     return replace_in_file(
         path,
