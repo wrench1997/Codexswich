@@ -1,18 +1,19 @@
 from mcp.server.fastmcp import FastMCP
+
 from tools import (
-    run_shell,
-    list_files,
-    read_file,
-    write_file,
-    replace_in_file,
-    search_replace_preview,
-    revert_file_backup,
-    powershell,
-    cmd,
-    bash,
-    shell,
-    run_in_terminal,
-    execute_bash,
+    run_shell as run_shell_tool,
+    list_files as list_files_tool,
+    read_file as read_file_tool,
+    write_file as write_file_tool,
+    replace_in_file as replace_in_file_tool,
+    search_replace_preview as search_replace_preview_tool,
+    revert_file_backup as revert_file_backup_tool,
+    powershell as powershell_tool,
+    cmd as cmd_tool,
+    bash as bash_tool,
+    shell as shell_tool,
+    run_in_terminal as run_in_terminal_tool,
+    execute_bash as execute_bash_tool,
 )
 
 mcp = FastMCP("codex-tools")
@@ -25,92 +26,58 @@ mcp = FastMCP("codex-tools")
 @mcp.tool()
 def execute_shell_command(command: str):
     """
-    【注意】执行系统 Shell/终端 命令。
-    【严禁行为】：绝对不可以使用此工具来读取、写入或修改文件！
-    严禁在此工具中使用 Get-Content、Set-Content、cat、sed、echo >、Out-File、Add-Content 等命令！
-    
-    对于文件的读取、覆盖或修改，你必须去调用专门的文件处理工具（如 read_file_content、modify_file_code、write_new_file）。
-    此工具仅限用于：运行编译命令 (npm/cargo/zig build)、启动脚本、查询系统环境、搜索文件内容 (grep/findstr) 等。
+    执行系统 Shell/终端命令。
+    不要用它来读写或修改文件。
     """
-    return run_shell(command)
+    return run_shell_tool(command)
 
 
 @mcp.tool()
 def run_in_terminal(command: str):
     """
-    【注意】Codex 兼容的终端执行工具。
-    【严禁行为】：绝对不可以使用此工具来读取、写入或修改文件！
-    严禁使用 Get-Content、Set-Content、cat、sed、echo >、Out-File 等文件操作命令！
-    
-    此工具仅限用于：运行编译命令、启动脚本、查询系统环境等。
-    对于文件操作，必须使用专门的文件工具（如 read_file_content、modify_file_code、write_new_file）。
+    Codex 兼容的终端执行工具。
     """
-    return run_in_terminal(command)
+    return run_in_terminal_tool(command)
 
 
 @mcp.tool()
 def execute_bash(command: str):
     """
-    【注意】Codex/OpenHands 兼容的 bash 执行器。
-    【严禁行为】：绝对不可以使用此工具来读取、写入或修改文件！
-    严禁使用 cat、sed、awk、echo > 等文件操作命令！
-    
-    此工具仅限用于：运行编译命令、启动脚本、查询系统环境等。
-    对于文件操作，必须使用专门的文件工具（如 read_file_content、modify_file_code、write_new_file）。
+    Codex/OpenHands 兼容的 bash 执行器。
     """
-    return execute_bash(command)
+    return execute_bash_tool(command)
 
 
 @mcp.tool()
 def shell(command: str):
     """
-    【注意】Shell 命令执行别名。
-    【严禁行为】：绝对不可以使用此工具来读取、写入或修改文件！
-    严禁使用 Get-Content、Set-Content、cat、sed、echo >、Out-File 等文件操作命令！
-    
-    此工具仅限用于：运行编译命令、启动脚本、查询系统环境等。
-    对于文件操作，必须使用专门的文件工具（如 read_file_content、modify_file_code、write_new_file）。
+    Shell 命令执行别名。
     """
-    return shell(command)
+    return shell_tool(command)
 
 
 @mcp.tool()
 def bash(command: str):
     """
-    【注意】Bash 命令执行别名。
-    【严禁行为】：绝对不可以使用此工具来读取、写入或修改文件！
-    严禁使用 cat、sed、awk、echo > 等文件操作命令！
-    
-    此工具仅限用于：运行编译命令、启动脚本、查询系统环境等。
-    对于文件操作，必须使用专门的文件工具（如 read_file_content、modify_file_code、write_new_file）。
+    Bash 命令执行别名。
     """
-    return bash(command)
+    return bash_tool(command)
 
 
 @mcp.tool()
 def powershell(command: str):
     """
-    【注意】Windows PowerShell 命令执行器。
-    【严禁行为】：绝对不可以使用此工具来读取、写入或修改文件！
-    严禁使用 Get-Content、Set-Content、Add-Content、Out-File、echo > 等文件操作命令！
-    
-    此工具仅限用于：运行编译命令、启动脚本、查询系统环境等。
-    对于文件操作，必须使用专门的文件工具（如 read_file_content、modify_file_code、write_new_file）。
+    Windows PowerShell 命令执行器。
     """
-    return powershell(command)
+    return powershell_tool(command)
 
 
 @mcp.tool()
 def cmd(command: str):
     """
-    【注意】Windows CMD 命令执行器。
-    【严禁行为】：绝对不可以使用此工具来读取、写入或修改文件！
-    严禁使用 type、copy con、echo > 等文件操作命令！
-    
-    此工具仅限用于：运行编译命令、启动脚本、查询系统环境等。
-    对于文件操作，必须使用专门的文件工具（如 read_file_content、modify_file_code、write_new_file）。
+    Windows CMD 命令执行器。
     """
-    return cmd(command)
+    return cmd_tool(command)
 
 
 # =========================================================
@@ -120,30 +87,25 @@ def cmd(command: str):
 @mcp.tool()
 def list_directory_files(path: str = "."):
     """
-    【强制要求】列出指定目录下的所有文件和文件夹。
-    当用户问"当前目录下有什么"、"帮我看看项目结构"时，必须优先调用此工具。
-    切勿凭记忆或猜测目录内容！
+    列出指定目录下的文件和文件夹。
     """
-    return list_files(path)
+    return list_files_tool(path)
 
 
 @mcp.tool()
 def read_file_content(path: str):
     """
-    【强制要求】读取并查看本地文件的完整内容。
-    当用户要求你分析代码、修改代码、或者询问某个文件里的逻辑时，
-    你绝对不能凭记忆猜测，必须先调用此工具读取文件的真实内容！
+    读取并查看本地文件的完整内容。
     """
-    return read_file(path)
+    return read_file_tool(path)
 
 
 @mcp.tool()
 def write_new_file(path: str, content: str):
     """
-    向指定路径写入全新的文件。如果目录不存在会自动创建。
-    当需要创建新代码文件或覆盖现有文件时使用此工具。
+    写入一个新文件，或覆盖现有文件。
     """
-    return write_file(path, content)
+    return write_file_tool(path, content)
 
 
 @mcp.tool()
@@ -158,22 +120,9 @@ def modify_file_code(
     create_backup: bool = True,
 ):
     """
-    【强制要求】这是修改代码和文本文件的唯一指定工具！
-    当需要修改现有文件中的代码时，必须调用此工具，绝对不要使用终端命令！
-    
-    相比终端命令，此工具绝对安全，且会自动创建备份文件，支持正则替换和范围修改。
-    
-    Args:
-        path: 要修改的文件路径。
-        old_code: 要搜索的代码字符串或正则表达式（必须先调用 read_file_content 确认内容存在）。
-        new_code: 要替换成的新代码字符串。
-        use_regex: 如果为 True，将 old_code 视为正则表达式。
-        replace_all: 如果为 True，替换所有匹配项。
-        start_line: 可选的起始行号 (1-indexed)，用于范围替换。
-        end_line: 可选的结束行号 (1-indexed)，用于范围替换。
-        create_backup: 如果为 True，在修改前创建.bak 备份文件（默认开启）。
+    修改现有文件内容的唯一推荐工具。
     """
-    return replace_in_file(
+    return replace_in_file_tool(
         path,
         old_code,
         new_code,
@@ -195,18 +144,9 @@ def search_replace_preview(
     context_lines: int = 3,
 ):
     """
-    在应用更改前预览修改效果。显示类似 diff 的输出。
-    建议在正式修改前先调用此工具确认变更范围。
-    
-    Args:
-        path: 要检查的文件路径。
-        old_code: 要搜索的代码字符串或正则表达式。
-        new_code: 要替换成的新代码字符串。
-        use_regex: 如果为 True，将 old_code 视为正则表达式。
-        replace_all: 如果为 True，显示所有匹配项。
-        context_lines: 在每个匹配项周围显示的行数。
+    在应用更改前预览替换效果。
     """
-    return search_replace_preview(
+    return search_replace_preview_tool(
         path,
         old_code,
         new_code,
@@ -219,13 +159,9 @@ def search_replace_preview(
 @mcp.tool()
 def revert_file_backup(path: str):
     """
-    将文件恢复到备份版本 (.bak)。
-    当修改出错需要回滚时调用此工具。
-    
-    Args:
-        path: 要恢复的文件路径。
+    恢复文件到 .bak 备份版本。
     """
-    return revert_file_backup(path)
+    return revert_file_backup_tool(path)
 
 
 # =========================================================
