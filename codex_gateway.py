@@ -207,6 +207,10 @@ def get_emit_text(text: str) -> str:
     if think_idx != -1 and "</think>" not in text[think_idx:]:
         text = text[:think_idx]
 
+    # 修复：防止模板注入导致模型不输出 <think> 而只输出 </think> 的泄露情况
+    if "</think>" in text:
+        text = text.split("</think>")[-1]
+
     tool_idx = text.find("<tool_call")
     if tool_idx != -1:
         text = text[:tool_idx]
@@ -220,7 +224,8 @@ def get_emit_text(text: str) -> str:
             text = text[:-len(p)]
             break
 
-    return text
+    # 修复：清理掉因为提取标签而多出来的开头换行
+    return text.lstrip()
 
 
 def flatten_tools(tools):
@@ -306,6 +311,10 @@ def parse_xml_tool_calls(text: str, available_tools=None, context_text=""):
         if param_matches:
             for p in param_matches:
                 key = p.group("name").strip()
+                # ========== 增加此拦截防御逻辑 ==========
+                if key in ("kwargs", "justification"):
+                    continue
+                # ========================================
                 val = parse_parameter_value(p.group("value"))
                 args[key] = val
         else:
@@ -774,18 +783,20 @@ async def responses(req: Request):
                     output_items = []
                     output_index = 0
 
-                    # 修复无限死循环：只要给客户端发了 message 开始事件，就必须发 done 闭合它！
+# 修复无限死循环：只要给客户端发了 message 开始事件，就必须发 done 闭合它！
                     if message_item_created:
                         text_item = {
                             "id": item_id,
                             "type": "message",
                             "role": "assistant",
                             "status": "completed",
-                            "content": [{"type": "output_text", "text": full_text}],
+                            # 修复：将 output_text 改为标准的 text
+                            "content": [{"type": "text", "text": full_text}],
                         }
 
                         if content_part_created:
-                            yield make_event("response.output_text.done", {
+                            # 修复：将 response.output_text.done 改为 response.text.done
+                            yield make_event("response.text.done", {
                                 "item_id": item_id,
                                 "output_index": 0,
                                 "content_index": 0,
@@ -795,7 +806,8 @@ async def responses(req: Request):
                                 "item_id": item_id,
                                 "output_index": 0,
                                 "content_index": 0,
-                                "part": {"type": "output_text", "text": full_text},
+                                # 修复：将 output_text 改为 text
+                                "part": {"type": "text", "text": full_text},
                             })
 
                         yield make_event("response.output_item.done", {
@@ -857,7 +869,7 @@ async def responses(req: Request):
                             "type": "message",
                             "role": "assistant",
                             "status": "completed",
-                            "content": [{"type": "output_text", "text": ""}],
+                            "content": [{"type": "text", "text": ""}],
                         }
                         yield make_event("response.output_item.added", {
                             "output_index": 0,
@@ -918,10 +930,12 @@ async def responses(req: Request):
                             "item_id": item_id,
                             "output_index": 0,
                             "content_index": 0,
-                            "part": {"type": "output_text", "text": ""},
+                            # 修复：将 output_text 改为 text
+                            "part": {"type": "text", "text": ""},
                         })
 
-                    yield make_event("response.output_text.delta", {
+                    # 修复：将 response.output_text.delta 改为 response.text.delta
+                    yield make_event("response.text.delta", {
                         "item_id": item_id,
                         "output_index": 0,
                         "content_index": 0,
@@ -958,7 +972,8 @@ async def responses(req: Request):
             "type": "message",
             "role": "assistant",
             "status": "completed",
-            "content": [{"type": "output_text", "text": strip_think(emit_text)}],
+            # 修复：将 output_text 改为 text
+            "content": [{"type": "text", "text": strip_think(emit_text)}],
         }
         output_items.append(text_item)
 

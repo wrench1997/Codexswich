@@ -50,31 +50,38 @@ mcp = FastMCP("codex-tools")
 # =========================================================
 
 @mcp.tool()
-def execute_shell_command(command: str, cwd: str = None, timeout: int = None, **kwargs):
+def execute_shell_command(command: str, cwd: str = None, timeout: int = None) -> dict:
+    """Run a shell command only for environment inspection, build, test, or runtime tasks."""
     return run_shell_tool(command, cwd=cwd, timeout=timeout)
 
 @mcp.tool()
-def run_in_terminal(command: str, cwd: str = None, timeout: int = None, **kwargs):
+def run_in_terminal(command: str, cwd: str = None, timeout: int = None) -> dict:
+    """Codex-compatible terminal execution tool. Use only for build/run/test tasks, not for file operations."""
     return run_in_terminal_tool(command, cwd=cwd, timeout=timeout)
 
 @mcp.tool()
-def execute_bash(command: str, cwd: str = None, timeout: int = None, **kwargs):
+def execute_bash(command: str, cwd: str = None, timeout: int = None) -> dict:
+    """Codex/OpenHands-compatible bash execution tool. Use only for build/run/test tasks."""
     return execute_bash_tool(command, cwd=cwd, timeout=timeout)
 
 @mcp.tool()
-def shell(command: str, cwd: str = None, timeout: int = None, **kwargs):
+def shell(command: str, cwd: str = None, timeout: int = None) -> dict:
+    """Shell command execution alias. Use only for build/run/test tasks."""
     return shell_tool(command, cwd=cwd, timeout=timeout)
 
 @mcp.tool()
-def bash(command: str, cwd: str = None, timeout: int = None, **kwargs):
+def bash(command: str, cwd: str = None, timeout: int = None) -> dict:
+    """Bash command execution alias. Use only for build/run/test tasks."""
     return bash_tool(command, cwd=cwd, timeout=timeout)
 
 @mcp.tool()
-def powershell(command: str, cwd: str = None, timeout: int = None, **kwargs):
+def powershell(command: str, cwd: str = None, timeout: int = None) -> dict:
+    """Windows PowerShell command executor. Use only for build/run/test tasks."""
     return powershell_tool(command, cwd=cwd, timeout=timeout)
 
 @mcp.tool()
-def cmd(command: str, cwd: str = None, timeout: int = None, **kwargs):
+def cmd(command: str, cwd: str = None, timeout: int = None) -> dict:
+    """Windows CMD command executor. Use only for build/run/test tasks."""
     return cmd_tool(command, cwd=cwd, timeout=timeout)
 
 # =========================================================
@@ -82,17 +89,19 @@ def cmd(command: str, cwd: str = None, timeout: int = None, **kwargs):
 # =========================================================
 
 @mcp.tool()
-def list_directory_files(path: str = ".", **kwargs):
+def list_directory_files(path: str = ".") -> dict:
+    """List files and directories in a path within the workspace. Use this to inspect directory contents."""
     return list_files_tool(path)
 
 @mcp.tool()
-def read_file_content(path: str, **kwargs):
+def read_file_content(path: str) -> dict:
+    """Primary tool for reading local files. Use this instead of shell commands."""
     logger.debug("read_file_content called with path=%r", path)
-    result = read_file_tool(path)
-    return result
+    return read_file_tool(path)
 
 @mcp.tool()
-def write_new_file(path: str, content: str, **kwargs):
+def write_new_file(path: str, content: str) -> dict:
+    """Primary tool for creating new files or overwriting entire file contents."""
     return write_file_tool(path, content)
 
 @mcp.tool()
@@ -104,9 +113,9 @@ def modify_file_code(
     replace_all: bool = False,
     start_line: int = None,
     end_line: int = None,
-    create_backup: bool = True,
-    **kwargs
-):
+    create_backup: bool = True
+) -> dict:
+    """Primary tool for editing existing files. Use this instead of shell commands when modifying files."""
     return replace_in_file_tool(
         path, old_code, new_code, use_regex=use_regex, 
         replace_all=replace_all, start_line=start_line, 
@@ -120,16 +129,17 @@ def search_replace_preview(
     new_code: str = "",
     use_regex: bool = False,
     replace_all: bool = False,
-    context_lines: int = 3,
-    **kwargs
-):
+    context_lines: int = 3
+) -> dict:
+    """Preview code changes before applying them. Use before risky edits."""
     return search_replace_preview_tool(
         path, old_code, new_code, use_regex=use_regex,
         replace_all=replace_all, context_lines=context_lines,
     )
 
 @mcp.tool()
-def revert_file_backup(path: str, **kwargs):
+def revert_file_backup(path: str) -> dict:
+    """Revert a file to its backup version (.bak file)."""
     return revert_file_backup_tool(path)
 
 
