@@ -24,17 +24,16 @@ app = FastAPI()
 
 THINK_RE = re.compile(r"<think>.*?</think>", re.S)
 
-# 修复：兼容 AI 画蛇添足加引号的情况，如 <function="name">
+# 修复：兼容 AI 画蛇添足加引号的情况，以及 <function name="name"> 的标准 XML 变体
 TOOL_CALL_RE = re.compile(
-    r"<tool_call>\s*<function=[\"\']?(?P<name>[^>\"\']+)[\"\']?>\s*(?P<body>.*?)</function>\s*</tool_call>",
-    re.S,
+    r"<tool_call>\s*<function(?:=|\s+name=)[\"\']?(?P<name>[^>\"\']+)[\"\']?>\s*(?P<body>.*?)</function>\s*</tool_call>",
+    re.S | re.I,
 )
-# 修复：兼容 <parameter="name">
+# 修复：兼容 <parameter="name"> 以及 <parameter name="name">
 PARAM_RE = re.compile(
-    r"<parameter=[\"\']?(?P<name>[^>\"\']+)[\"\']?>\s*(?P<value>.*?)</parameter>", 
-    re.S
+    r"<parameter(?:=|\s+name=)[\"\']?(?P<name>[^>\"\']+)[\"\']?>\s*(?P<value>.*?)</parameter>", 
+    re.S | re.I
 )
-
 # =========================================================
 # MEMORY
 # =========================================================
@@ -261,11 +260,17 @@ def parse_parameter_value(raw: str):
         return raw
 
 
-def parse_xml_tool_calls(text: str, available_tools=None):
+def parse_xml_tool_calls(text: str, available_tools=None, context_text=""):
     """
     从文本中解析出一个或多个 XML tool_call。
-    加入强力容错：自动匹配 MCP 客户端带前缀的工具名（如 mymcp__read_file_content）。
+    加入终极容错：剥离 think 标签，支持动态提取被隐藏的 MCP 前缀。
     """
+    text = THINK_RE.sub("", text)
+    think_idx = text.rfind("<think>")
+    if think_idx != -1 and "</think>" not in text[think_idx:]:
+        text = text[:think_idx]
+    # ====================================================================
+
     calls = []
     
     # 提取当前客户端所有合法的工具名
@@ -274,42 +279,55 @@ def parse_xml_tool_calls(text: str, available_tools=None):
         valid_tool_names = [get_tool_name(t) for t in flatten_tools(available_tools)]
         
     for m in TOOL_CALL_RE.finditer(text):
-        fn_name = m.group("name").strip()
+        original_fn_name = m.group("name").strip()
+        fn_name = original_fn_name
         body = m.group("body").strip()
 
-        # ==========================================
-        # 核心修复：前缀自动修正机制
-        # 如果 AI 输出了 'read_file_content'，但客户端要求 'mymcp__read_file_content'
-        # 我们在这里自动把它纠正过来。
-        # ==========================================
+        # 1. 优先从结构化 tools 中进行后缀匹配
         if valid_tool_names and fn_name not in valid_tool_names:
             for real_name in valid_tool_names:
-                # 匹配 mymcp__name 或 mymcp-name
-                if real_name.endswith(f"__{fn_name}") or real_name.endswith(f"-{fn_name}"):
+                if real_name.endswith(fn_name):
                     fn_name = real_name
                     break
+        
+        # 2. 终极动态前缀嗅探 (解决客户端不传 structured tools 而是塞在 prompt 的情况)
+        if context_text and (not valid_tool_names or fn_name not in valid_tool_names):
+            # 寻找请求全文中长得像 "前缀__原名" 的词 (例如 mymcp__read_file_content)
+            fallback_match = re.search(r'([a-zA-Z0-9_\-]+' + re.escape(fn_name) + r')\b', context_text)
+            if fallback_match:
+                found_name = fallback_match.group(1)
+                if found_name != fn_name:
+                    print(f"[Gateway Debug] 文本全文嗅探匹配成功，修正工具名：{fn_name} -> {found_name}")
+                    fn_name = found_name
 
         args = {}
         param_matches = list(PARAM_RE.finditer(body))
         
         if param_matches:
-            # 正常情况：按 <parameter> 标签解析
             for p in param_matches:
                 key = p.group("name").strip()
                 val = parse_parameter_value(p.group("value"))
                 args[key] = val
         else:
-            # 兜底情况：AI 偷懒，直接在 function 里面输出了 JSON
             try:
                 args = json.loads(body)
                 if not isinstance(args, dict):
                     args = {}
             except Exception:
                 pass
+        # 3. 应对 AI 被报错搞懵后输出简写 XML 的空参数情况
+        if not args and body.strip():
+            fallback_re = re.compile(r"<([a-zA-Z0-9_]+)>\s*(.*?)\s*</\1>", re.S)
+            for m_fallback in fallback_re.finditer(body):
+                key = m_fallback.group(1).strip()
+                val = parse_parameter_value(m_fallback.group(2))
+                if key not in ("function", "tool_call"):
+                    args[key] = val
                 
         print(f"========== [Gateway Debug] 解析到工具调用 ==========")
-        print(f"Tool Name (修正后): {fn_name}")
-        print(f"Arguments: {args}")
+        print(f"AI 原始名称 : {original_fn_name}")
+        print(f"网关修正名称：{fn_name}")
+        print(f"提取的参数  : {args}")
         print(f"====================================================")
 
         calls.append({
@@ -323,12 +341,8 @@ def parse_xml_tool_calls(text: str, available_tools=None):
 
     return calls
 
-
-def parse_xml_tool_call(text: str, available_tools=None):
-    """
-    兼容旧接口：只返回第一个 tool_call。
-    """
-    calls = parse_xml_tool_calls(text, available_tools)
+def parse_xml_tool_call(text: str, available_tools=None, context_text=""):
+    calls = parse_xml_tool_calls(text, available_tools, context_text)
     return calls[0] if calls else None
 
 
@@ -633,7 +647,7 @@ def make_chat_chunk(chunk_id: str, model: str, delta: dict[str, Any], finish_rea
     }
 
 
-async def chat_completion_stream(payload, model: str, tools=None):
+async def chat_completion_stream(payload, model: str, tools=None, context_text=""):
     chunk_id = f"chatcmpl_{uuid.uuid4().hex[:8]}"
     accumulated = ""
     emitted_length = 0
@@ -642,7 +656,7 @@ async def chat_completion_stream(payload, model: str, tools=None):
 
     async for chunk in vllm_stream(payload):
         if chunk == "[DONE]":
-            tool_calls = parse_xml_tool_calls(accumulated, available_tools=tools)
+            tool_calls = parse_xml_tool_calls(accumulated, available_tools=tools, context_text=context_text)
 
             if tool_calls:
                 delta = {
@@ -702,6 +716,7 @@ async def models():
 @app.post("/v1/responses")
 async def responses(req: Request):
     body = await req.json()
+    context_text = json.dumps(body, ensure_ascii=False)
     stream = body.get("stream", False)
     model = body.get("model", MODEL_NAME)
     response_id = f"resp_{uuid.uuid4().hex[:8]}"
@@ -754,7 +769,7 @@ async def responses(req: Request):
 
             async for chunk in vllm_stream(payload):
                 if chunk == "[DONE]":
-                    tool_calls = parse_xml_tool_calls(accumulated, available_tools=tools)
+                    tool_calls = parse_xml_tool_calls(accumulated, available_tools=tools, context_text=context_text)
                     
                     output_items = []
                     output_index = 0
@@ -931,7 +946,7 @@ async def responses(req: Request):
         })
 
     text = data["choices"][0]["message"].get("content", "")
-    tool_calls = parse_xml_tool_calls(text, available_tools=tools)
+    tool_calls = parse_xml_tool_calls(text, available_tools=tools, context_text=context_text)
     emit_text = get_emit_text(text)
 
     output_items = []
@@ -987,6 +1002,7 @@ async def get_response(response_id: str):
 @app.post("/v1/chat/completions")
 async def chat_completions(req: Request):
     body = await req.json()
+    context_text = json.dumps(body, ensure_ascii=False)
     stream = body.get("stream", False)
     model = body.get("model", MODEL_NAME)
     tools = body.get("tools")
@@ -1004,7 +1020,7 @@ async def chat_completions(req: Request):
     }
 
     if stream:
-        return StreamingResponse(chat_completion_stream(payload, model, tools), media_type="text/event-stream")
+        return StreamingResponse(chat_completion_stream(payload, model, tools, context_text), media_type="text/event-stream")
 
     data = await vllm_complete(payload)
     if "__error__" in data:
@@ -1013,7 +1029,7 @@ async def chat_completions(req: Request):
         }, status_code=500)
 
     text = data["choices"][0]["message"].get("content", "")
-    tool_calls = parse_xml_tool_calls(text, available_tools=tools)
+    tool_calls = parse_xml_tool_calls(text, available_tools=tools, context_text=context_text)
     emit_text = get_emit_text(text)
 
     response = build_chat_completion_json(model, emit_text, tool_calls)

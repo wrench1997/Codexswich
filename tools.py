@@ -103,15 +103,18 @@ def _subprocess_cwd():
     return str(root) if root.exists() and root.is_dir() else None
 
 
-def _run_subprocess(command, *, shell=False):
+def _run_subprocess(command, *, shell=False, cwd=None, timeout=None):
     try:
+        effective_cwd = cwd if cwd is not None else _subprocess_cwd()
+        effective_timeout = timeout if timeout is not None else COMMAND_TIMEOUT
+        
         result = subprocess.run(
             command,
             shell=shell,
             capture_output=True,
             text=True,
-            cwd=_subprocess_cwd(),
-            timeout=COMMAND_TIMEOUT,
+            cwd=effective_cwd,
+            timeout=effective_timeout,
         )
         return {
             "stdout": result.stdout,
@@ -119,7 +122,7 @@ def _run_subprocess(command, *, shell=False):
             "returncode": result.returncode,
         }
     except subprocess.TimeoutExpired:
-        return {"error": f"Command timed out after {COMMAND_TIMEOUT} seconds"}
+        return {"error": f"Command timed out after {effective_timeout} seconds"}
     except Exception as e:
         return {"error": str(e)}
 
@@ -129,13 +132,18 @@ def _run_subprocess(command, *, shell=False):
 # =========================================================
 
 @tool
-def run_shell(command: str):
+def run_shell(command: str, cwd: str = None, timeout: int = None):
     """
     Run a shell command in the system's default shell.
+    
+    Args:
+        command: The shell command to execute.
+        cwd: Optional working directory for the command. If not provided, uses workspace root.
+        timeout: Optional timeout in seconds. If not provided, uses COMMAND_TIMEOUT (default: 30).
     """
     if _is_command_blacklisted(command):
         return {"error": "Command is blocked by blacklist"}
-    return _run_subprocess(command, shell=True)
+    return _run_subprocess(command, shell=True, cwd=cwd, timeout=timeout)
 
 
 # =========================================================
@@ -227,11 +235,16 @@ def write_file(path: str, content: str):
 # =========================================================
 
 @tool
-def run_in_terminal(command: str):
+def run_in_terminal(command: str, cwd: str = None, timeout: int = None):
     """
     Codex/OpenHands compatible terminal execution tool.
+    
+    Args:
+        command: The terminal command to execute.
+        cwd: Optional working directory for the command. If not provided, uses workspace root.
+        timeout: Optional timeout in seconds. If not provided, uses COMMAND_TIMEOUT (default: 30).
     """
-    return run_shell(command)
+    return run_shell(command, cwd=cwd, timeout=timeout)
 
 
 # =========================================================
@@ -239,11 +252,16 @@ def run_in_terminal(command: str):
 # =========================================================
 
 @tool
-def execute_bash(command: str):
+def execute_bash(command: str, cwd: str = None, timeout: int = None):
     """
     Codex/OpenHands compatible bash execution tool.
+    
+    Args:
+        command: The bash command to execute.
+        cwd: Optional working directory for the command. If not provided, uses workspace root.
+        timeout: Optional timeout in seconds. If not provided, uses COMMAND_TIMEOUT (default: 30).
     """
-    return run_shell(command)
+    return run_shell(command, cwd=cwd, timeout=timeout)
 
 
 # =========================================================
@@ -251,11 +269,16 @@ def execute_bash(command: str):
 # =========================================================
 
 @tool
-def shell(command: str):
+def shell(command: str, cwd: str = None, timeout: int = None):
     """
     Alias for run_shell.
+    
+    Args:
+        command: The shell command to execute.
+        cwd: Optional working directory for the command. If not provided, uses workspace root.
+        timeout: Optional timeout in seconds. If not provided, uses COMMAND_TIMEOUT (default: 30).
     """
-    return run_shell(command)
+    return run_shell(command, cwd=cwd, timeout=timeout)
 
 
 # =========================================================
@@ -263,11 +286,16 @@ def shell(command: str):
 # =========================================================
 
 @tool
-def bash(command: str):
+def bash(command: str, cwd: str = None, timeout: int = None):
     """
     Alias for run_shell.
+    
+    Args:
+        command: The bash command to execute.
+        cwd: Optional working directory for the command. If not provided, uses workspace root.
+        timeout: Optional timeout in seconds. If not provided, uses COMMAND_TIMEOUT (default: 30).
     """
-    return run_shell(command)
+    return run_shell(command, cwd=cwd, timeout=timeout)
 
 
 # =========================================================
@@ -275,9 +303,14 @@ def bash(command: str):
 # =========================================================
 
 @tool
-def powershell(command: str):
+def powershell(command: str, cwd: str = None, timeout: int = None):
     """
     Run a PowerShell command on Windows.
+    
+    Args:
+        command: The PowerShell command to execute.
+        cwd: Optional working directory for the command. If not provided, uses workspace root.
+        timeout: Optional timeout in seconds. If not provided, uses COMMAND_TIMEOUT (default: 30).
     """
     if not IS_WINDOWS:
         return {"error": "powershell is only available on Windows"}
@@ -285,7 +318,7 @@ def powershell(command: str):
     if _is_command_blacklisted(command):
         return {"error": "Command is blocked by blacklist"}
 
-    return _run_subprocess(["powershell", "-Command", command], shell=False)
+    return _run_subprocess(["powershell", "-Command", command], shell=False, cwd=cwd, timeout=timeout)
 
 
 # =========================================================
@@ -293,9 +326,14 @@ def powershell(command: str):
 # =========================================================
 
 @tool
-def cmd(command: str):
+def cmd(command: str, cwd: str = None, timeout: int = None):
     """
     Run a command via Windows cmd.exe.
+    
+    Args:
+        command: The CMD command to execute.
+        cwd: Optional working directory for the command. If not provided, uses workspace root.
+        timeout: Optional timeout in seconds. If not provided, uses COMMAND_TIMEOUT (default: 30).
     """
     if not IS_WINDOWS:
         return {"error": "cmd is only available on Windows"}
@@ -303,7 +341,7 @@ def cmd(command: str):
     if _is_command_blacklisted(command):
         return {"error": "Command is blocked by blacklist"}
 
-    return _run_subprocess(["cmd", "/c", command], shell=False)
+    return _run_subprocess(["cmd", "/c", command], shell=False, cwd=cwd, timeout=timeout)
 
 
 # =========================================================
@@ -726,6 +764,14 @@ OPENAI_TOOLS = [
                     "command": {
                         "type": "string",
                         "description": "The shell command to execute"
+                    },
+                    "cwd": {
+                        "type": "string",
+                        "description": "Optional working directory for the command. If not provided, uses workspace root."
+                    },
+                    "timeout": {
+                        "type": "integer",
+                        "description": "Optional timeout in seconds. If not provided, uses default timeout (30 seconds)."
                     }
                 },
                 "required": ["command"]
@@ -743,6 +789,14 @@ OPENAI_TOOLS = [
                     "command": {
                         "type": "string",
                         "description": "The terminal command to execute"
+                    },
+                    "cwd": {
+                        "type": "string",
+                        "description": "Optional working directory for the command. If not provided, uses workspace root."
+                    },
+                    "timeout": {
+                        "type": "integer",
+                        "description": "Optional timeout in seconds. If not provided, uses default timeout (30 seconds)."
                     }
                 },
                 "required": ["command"]
@@ -760,6 +814,14 @@ OPENAI_TOOLS = [
                     "command": {
                         "type": "string",
                         "description": "The bash command to execute"
+                    },
+                    "cwd": {
+                        "type": "string",
+                        "description": "Optional working directory for the command. If not provided, uses workspace root."
+                    },
+                    "timeout": {
+                        "type": "integer",
+                        "description": "Optional timeout in seconds. If not provided, uses default timeout (30 seconds)."
                     }
                 },
                 "required": ["command"]
@@ -777,6 +839,14 @@ OPENAI_TOOLS = [
                     "command": {
                         "type": "string",
                         "description": "The shell command to execute"
+                    },
+                    "cwd": {
+                        "type": "string",
+                        "description": "Optional working directory for the command. If not provided, uses workspace root."
+                    },
+                    "timeout": {
+                        "type": "integer",
+                        "description": "Optional timeout in seconds. If not provided, uses default timeout (30 seconds)."
                     }
                 },
                 "required": ["command"]
@@ -794,6 +864,14 @@ OPENAI_TOOLS = [
                     "command": {
                         "type": "string",
                         "description": "The bash command to execute"
+                    },
+                    "cwd": {
+                        "type": "string",
+                        "description": "Optional working directory for the command. If not provided, uses workspace root."
+                    },
+                    "timeout": {
+                        "type": "integer",
+                        "description": "Optional timeout in seconds. If not provided, uses default timeout (30 seconds)."
                     }
                 },
                 "required": ["command"]
@@ -811,6 +889,14 @@ OPENAI_TOOLS = [
                     "command": {
                         "type": "string",
                         "description": "The PowerShell command to execute"
+                    },
+                    "cwd": {
+                        "type": "string",
+                        "description": "Optional working directory for the command. If not provided, uses workspace root."
+                    },
+                    "timeout": {
+                        "type": "integer",
+                        "description": "Optional timeout in seconds. If not provided, uses default timeout (30 seconds)."
                     }
                 },
                 "required": ["command"]
@@ -828,6 +914,14 @@ OPENAI_TOOLS = [
                     "command": {
                         "type": "string",
                         "description": "The CMD command to execute"
+                    },
+                    "cwd": {
+                        "type": "string",
+                        "description": "Optional working directory for the command. If not provided, uses workspace root."
+                    },
+                    "timeout": {
+                        "type": "integer",
+                        "description": "Optional timeout in seconds. If not provided, uses default timeout (30 seconds)."
                     }
                 },
                 "required": ["command"]

@@ -50,92 +50,50 @@ mcp = FastMCP("codex-tools")
 # =========================================================
 
 @mcp.tool()
-def execute_shell_command(command: str):
-    """
-    执行系统 Shell/终端命令。
-    不要用它来读写或修改文件。
-    """
-    return run_shell_tool(command)
-
+def execute_shell_command(command: str, cwd: str = None, timeout: int = None, **kwargs):
+    return run_shell_tool(command, cwd=cwd, timeout=timeout)
 
 @mcp.tool()
-def run_in_terminal(command: str):
-    """
-    Codex 兼容的终端执行工具。
-    """
-    return run_in_terminal_tool(command)
-
+def run_in_terminal(command: str, cwd: str = None, timeout: int = None, **kwargs):
+    return run_in_terminal_tool(command, cwd=cwd, timeout=timeout)
 
 @mcp.tool()
-def execute_bash(command: str):
-    """
-    Codex/OpenHands 兼容的 bash 执行器。
-    """
-    return execute_bash_tool(command)
-
+def execute_bash(command: str, cwd: str = None, timeout: int = None, **kwargs):
+    return execute_bash_tool(command, cwd=cwd, timeout=timeout)
 
 @mcp.tool()
-def shell(command: str):
-    """
-    Shell 命令执行别名。
-    """
-    return shell_tool(command)
-
+def shell(command: str, cwd: str = None, timeout: int = None, **kwargs):
+    return shell_tool(command, cwd=cwd, timeout=timeout)
 
 @mcp.tool()
-def bash(command: str):
-    """
-    Bash 命令执行别名。
-    """
-    return bash_tool(command)
-
+def bash(command: str, cwd: str = None, timeout: int = None, **kwargs):
+    return bash_tool(command, cwd=cwd, timeout=timeout)
 
 @mcp.tool()
-def powershell(command: str):
-    """
-    Windows PowerShell 命令执行器。
-    """
-    return powershell_tool(command)
-
+def powershell(command: str, cwd: str = None, timeout: int = None, **kwargs):
+    return powershell_tool(command, cwd=cwd, timeout=timeout)
 
 @mcp.tool()
-def cmd(command: str):
-    """
-    Windows CMD 命令执行器。
-    """
-    return cmd_tool(command)
+def cmd(command: str, cwd: str = None, timeout: int = None, **kwargs):
+    return cmd_tool(command, cwd=cwd, timeout=timeout)
 
 # =========================================================
 # FILE TOOLS
 # =========================================================
 
 @mcp.tool()
-def list_directory_files(path: str = "."):
-    """
-    列出指定目录下的文件和文件夹。
-    """
+def list_directory_files(path: str = ".", **kwargs):
     return list_files_tool(path)
 
-
 @mcp.tool()
-def read_file_content(path: str):
-    """
-    读取并查看本地文件的完整内容。
-    MCP 安全版：不向 stdout 输出任何调试信息。
-    """
+def read_file_content(path: str, **kwargs):
     logger.debug("read_file_content called with path=%r", path)
     result = read_file_tool(path)
-    logger.debug("read_file_content completed")
     return result
 
-
 @mcp.tool()
-def write_new_file(path: str, content: str):
-    """
-    写入一个新文件，或覆盖现有文件。
-    """
+def write_new_file(path: str, content: str, **kwargs):
     return write_file_tool(path, content)
-
 
 @mcp.tool()
 def modify_file_code(
@@ -147,21 +105,13 @@ def modify_file_code(
     start_line: int = None,
     end_line: int = None,
     create_backup: bool = True,
+    **kwargs
 ):
-    """
-    修改现有文件内容的唯一推荐工具。
-    """
     return replace_in_file_tool(
-        path,
-        old_code,
-        new_code,
-        use_regex=use_regex,
-        replace_all=replace_all,
-        start_line=start_line,
-        end_line=end_line,
-        create_backup=create_backup,
+        path, old_code, new_code, use_regex=use_regex, 
+        replace_all=replace_all, start_line=start_line, 
+        end_line=end_line, create_backup=create_backup,
     )
-
 
 @mcp.tool()
 def search_replace_preview(
@@ -171,26 +121,17 @@ def search_replace_preview(
     use_regex: bool = False,
     replace_all: bool = False,
     context_lines: int = 3,
+    **kwargs
 ):
-    """
-    在应用更改前预览替换效果。
-    """
     return search_replace_preview_tool(
-        path,
-        old_code,
-        new_code,
-        use_regex=use_regex,
-        replace_all=replace_all,
-        context_lines=context_lines,
+        path, old_code, new_code, use_regex=use_regex,
+        replace_all=replace_all, context_lines=context_lines,
     )
 
-
 @mcp.tool()
-def revert_file_backup(path: str):
-    """
-    恢复文件到 .bak 备份版本。
-    """
+def revert_file_backup(path: str, **kwargs):
     return revert_file_backup_tool(path)
+
 
 # =========================================================
 # MAIN
