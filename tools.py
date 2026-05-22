@@ -32,7 +32,9 @@ else:
 # CONFIG - Security Settings
 # =========================================================
 
-WORKSPACE = None
+# WORKSPACE root used for resolving relative file paths.
+# If env var WORKSPACE is not set, fall back to current working directory.
+WORKSPACE = os.environ.get("WORKSPACE") or str(Path.cwd().resolve())
 COMMAND_BLACKLIST = []
 COMMAND_TIMEOUT = 30
 
@@ -58,8 +60,28 @@ def register_tool_alias(alias_name: str, target_fn):
 # INTERNAL HELPERS
 # =========================================================
 
+def _workspace_path() -> Path:
+    """
+    Return the workspace root as an absolute Path.
+    Falls back to current working directory if WORKSPACE is invalid.
+    """
+    try:
+        p = Path(WORKSPACE).expanduser()
+        if p.exists() and p.is_dir():
+            return p.resolve()
+    except Exception:
+        pass
+    return Path.cwd().resolve()
+
+
 def _normalize_path(path: str) -> Path:
-    p = Path(path)
+    """
+    Resolve a path against WORKSPACE if it is relative.
+    Absolute paths are preserved.
+    """
+    p = Path(path).expanduser()
+    if not p.is_absolute():
+        p = _workspace_path() / p
     return p.resolve()
 
 
@@ -73,6 +95,14 @@ def _is_command_blacklisted(command: str) -> bool:
     return False
 
 
+def _subprocess_cwd():
+    """
+    Return a valid cwd for subprocess execution.
+    """
+    root = _workspace_path()
+    return str(root) if root.exists() and root.is_dir() else None
+
+
 def _run_subprocess(command, *, shell=False):
     try:
         result = subprocess.run(
@@ -80,7 +110,7 @@ def _run_subprocess(command, *, shell=False):
             shell=shell,
             capture_output=True,
             text=True,
-            cwd=WORKSPACE,
+            cwd=_subprocess_cwd(),
             timeout=COMMAND_TIMEOUT,
         )
         return {
@@ -530,130 +560,12 @@ register_tool_alias("revert_file_backup", revert_file_backup)
 # =========================================================
 
 OPENAI_TOOLS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "execute_shell_command",
-            "description": f"Run a shell command in the workspace directory. Default shell: {DEFAULT_SHELL}. {SHELL_HELP}. Do not use this to read or modify files when dedicated file tools exist.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "command": {
-                        "type": "string",
-                        "description": "The shell command to execute"
-                    }
-                },
-                "required": ["command"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "run_in_terminal",
-            "description": "Codex-compatible terminal execution tool.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "command": {
-                        "type": "string",
-                        "description": "The terminal command to execute"
-                    }
-                },
-                "required": ["command"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "execute_bash",
-            "description": "Codex/OpenHands-compatible bash execution tool.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "command": {
-                        "type": "string",
-                        "description": "The bash command to execute"
-                    }
-                },
-                "required": ["command"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "shell",
-            "description": "Shell command execution alias.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "command": {
-                        "type": "string",
-                        "description": "The shell command to execute"
-                    }
-                },
-                "required": ["command"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "bash",
-            "description": "Bash command execution alias.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "command": {
-                        "type": "string",
-                        "description": "The bash command to execute"
-                    }
-                },
-                "required": ["command"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "powershell",
-            "description": "Windows PowerShell command executor.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "command": {
-                        "type": "string",
-                        "description": "The PowerShell command to execute"
-                    }
-                },
-                "required": ["command"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "cmd",
-            "description": "Windows CMD command executor.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "command": {
-                        "type": "string",
-                        "description": "The CMD command to execute"
-                    }
-                },
-                "required": ["command"]
-            }
-        }
-    },
+    # ========== FILE TOOLS (Priority - Listed First) ==========
     {
         "type": "function",
         "function": {
             "name": "list_directory_files",
-            "description": "List files and directories in a path within the workspace.",
+            "description": "List files and directories in a path within the workspace. Use this to inspect directory contents.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -669,7 +581,7 @@ OPENAI_TOOLS = [
         "type": "function",
         "function": {
             "name": "read_file_content",
-            "description": "Read the full contents of a file within the workspace.",
+            "description": "Primary tool for reading local files. Use this instead of shell commands like type/cat/grep when you need file contents.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -686,7 +598,7 @@ OPENAI_TOOLS = [
         "type": "function",
         "function": {
             "name": "write_new_file",
-            "description": "Write content to a file within the workspace, creating parent directories if needed.",
+            "description": "Primary tool for creating new files or overwriting entire file contents.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -707,7 +619,7 @@ OPENAI_TOOLS = [
         "type": "function",
         "function": {
             "name": "modify_file_code",
-            "description": "Modify an existing file with string replacement, regex replacement, or line-range replacement. Creates backup by default.",
+            "description": "Primary tool for editing existing files. Use this instead of shell commands, sed, perl, redirects, or scripts when modifying files.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -752,7 +664,7 @@ OPENAI_TOOLS = [
         "type": "function",
         "function": {
             "name": "search_replace_preview",
-            "description": "Preview code changes before applying them. Shows matches with context.",
+            "description": "Preview code changes before applying them. Use before risky edits.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -799,6 +711,126 @@ OPENAI_TOOLS = [
                     }
                 },
                 "required": ["path"]
+            }
+        }
+    },
+    # ========== TERMINAL TOOLS (Fallback - Listed After File Tools) ==========
+    {
+        "type": "function",
+        "function": {
+            "name": "execute_shell_command",
+            "description": f"Run a shell command only for environment inspection, build, test, or runtime tasks. Default shell: {DEFAULT_SHELL}. {SHELL_HELP}. Do not use this tool to read, write, or modify files when dedicated file tools exist.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "command": {
+                        "type": "string",
+                        "description": "The shell command to execute"
+                    }
+                },
+                "required": ["command"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "run_in_terminal",
+            "description": "Codex-compatible terminal execution tool. Use only for build/run/test tasks, not for file operations.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "command": {
+                        "type": "string",
+                        "description": "The terminal command to execute"
+                    }
+                },
+                "required": ["command"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "execute_bash",
+            "description": "Codex/OpenHands-compatible bash execution tool. Use only for build/run/test tasks, not for file operations.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "command": {
+                        "type": "string",
+                        "description": "The bash command to execute"
+                    }
+                },
+                "required": ["command"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "shell",
+            "description": "Shell command execution alias. Use only for build/run/test tasks, not for file operations.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "command": {
+                        "type": "string",
+                        "description": "The shell command to execute"
+                    }
+                },
+                "required": ["command"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "bash",
+            "description": "Bash command execution alias. Use only for build/run/test tasks, not for file operations.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "command": {
+                        "type": "string",
+                        "description": "The bash command to execute"
+                    }
+                },
+                "required": ["command"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "powershell",
+            "description": "Windows PowerShell command executor. Use only for build/run/test tasks, not for file operations.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "command": {
+                        "type": "string",
+                        "description": "The PowerShell command to execute"
+                    }
+                },
+                "required": ["command"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "cmd",
+            "description": "Windows CMD command executor. Use only for build/run/test tasks, not for file operations.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "command": {
+                        "type": "string",
+                        "description": "The CMD command to execute"
+                    }
+                },
+                "required": ["command"]
             }
         }
     },

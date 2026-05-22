@@ -1,5 +1,14 @@
+import logging
+import os
+from pathlib import Path
+
+# Ensure relative paths are resolved against the current workspace by default.
+# You can override this externally by setting WORKSPACE before starting the server.
+os.environ.setdefault("WORKSPACE", str(Path.cwd().resolve()))
+
 from mcp.server.fastmcp import FastMCP
 
+import tools as tools_module
 from tools import (
     run_shell as run_shell_tool,
     list_files as list_files_tool,
@@ -16,8 +25,25 @@ from tools import (
     execute_bash as execute_bash_tool,
 )
 
-mcp = FastMCP("codex-tools")
+# =========================================================
+# LOGGING
+# =========================================================
 
+logger = logging.getLogger("codex-tools")
+
+if not logger.handlers:
+    _handler = logging.StreamHandler()
+    _handler.setLevel(logging.INFO)
+    _handler.setFormatter(logging.Formatter("[%(levelname)s] %(name)s: %(message)s"))
+    logger.addHandler(_handler)
+
+logger.setLevel(logging.INFO)
+logger.propagate = False
+
+# Keep module-level workspace in sync
+tools_module.WORKSPACE = os.environ.get("WORKSPACE", str(Path.cwd().resolve()))
+
+mcp = FastMCP("codex-tools")
 
 # =========================================================
 # TERMINAL TOOLS
@@ -79,7 +105,6 @@ def cmd(command: str):
     """
     return cmd_tool(command)
 
-
 # =========================================================
 # FILE TOOLS
 # =========================================================
@@ -96,8 +121,12 @@ def list_directory_files(path: str = "."):
 def read_file_content(path: str):
     """
     读取并查看本地文件的完整内容。
+    MCP 安全版：不向 stdout 输出任何调试信息。
     """
-    return read_file_tool(path)
+    logger.debug("read_file_content called with path=%r", path)
+    result = read_file_tool(path)
+    logger.debug("read_file_content completed")
+    return result
 
 
 @mcp.tool()
@@ -163,10 +192,10 @@ def revert_file_backup(path: str):
     """
     return revert_file_backup_tool(path)
 
-
 # =========================================================
 # MAIN
 # =========================================================
 
 if __name__ == "__main__":
+    # 不要在这里使用 print，避免污染 MCP stdio 协议。
     mcp.run()
